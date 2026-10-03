@@ -1,6 +1,6 @@
 import uuid
 import logging
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Union
 from pydantic import BaseModel, Field
 from fastapi import APIRouter
 from ..models.weather import WeatherResponse
@@ -19,9 +19,9 @@ class ChatRequest(BaseModel):
     session_id: Optional[str] = Field(None, description="Client session UUID")
     persona: Optional[List[str]] = Field(default_factory=list, description="Active persona roles")
     input_mode: Optional[str] = Field("text", description="'text' or 'voice'")
-    weather: Optional[WeatherResponse] = Field(None, description="Current dashboard weather telemetry")
-    context: Optional[UserContext] = Field(None, description="User context and preferences")
-    intelligence: Optional[IntelligenceSummary] = Field(None, description="Personalized intelligence summary")
+    weather: Optional[Union[WeatherResponse, Dict[str, Any]]] = Field(None, description="Current dashboard weather telemetry")
+    context: Optional[Union[UserContext, Dict[str, Any]]] = Field(None, description="User context and preferences")
+    intelligence: Optional[Union[IntelligenceSummary, Dict[str, Any]]] = Field(None, description="Personalized intelligence summary")
     language: Optional[str] = Field("en", description="Active language code (e.g. 'hi', 'en')")
 
 class ChatResponse(BaseModel):

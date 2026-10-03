@@ -63,6 +63,8 @@ export const AIAssistantModal: React.FC<AIAssistantModalProps> = ({
   const [inputText, setInputText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [conversationLocation, setConversationLocation] = useState<string | null>(null);
+  // Track the city name at mount time to detect city-change mid-conversation
+  const prevCityRef = useRef<string>(weather.location.name);
 
   // Live Continuous Voice Conversation States
   const [voiceState, setVoiceState] = useState<VoiceState>('IDLE');
@@ -93,7 +95,9 @@ export const AIAssistantModal: React.FC<AIAssistantModalProps> = ({
     : 'COMMUTE';
 
   const primaryPersona = (context.interests && context.interests[0]) || 'commute';
-  const displayLocation = conversationLocation || weather.location.name;
+  // displayLocation: always reflect the current city first, then conversational override only within the same city session
+  const currentCityName = weather.location.name;
+  const displayLocation = conversationLocation || currentCityName;
 
   // Persona-adaptive prompt chips generator
   const getPersonaQuickButtons = (persona: string, locName: string): string[] => {
@@ -445,6 +449,27 @@ export const AIAssistantModal: React.FC<AIAssistantModalProps> = ({
       stopLiveVoiceSession();
     }
   }, [isOpen, stopLiveVoiceSession]);
+
+  // Detect city change mid-conversation → insert divider, reset conversationLocation
+  useEffect(() => {
+    const prev = prevCityRef.current;
+    if (prev !== currentCityName && messages.length > 0) {
+      prevCityRef.current = currentCityName;
+      setConversationLocation(null);
+      setMessages((prev_msgs) => [
+        ...prev_msgs,
+        {
+          id: `city-change-${Date.now()}`,
+          sender: 'assistant',
+          text: `📍 Location changed to **${currentCityName}**. Previous answers were for ${prev}. Ask me anything about ${currentCityName}!`,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          suggestedActions: ['What is the temperature right now?', 'Will it rain today?', 'Check Air Quality Index'],
+        },
+      ]);
+    } else if (prev !== currentCityName) {
+      prevCityRef.current = currentCityName;
+    }
+  }, [currentCityName]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Initialize welcoming message
   useEffect(() => {

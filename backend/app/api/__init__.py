@@ -3,12 +3,14 @@ from .weather import router as weather_router
 from .intelligence import router as intelligence_router
 from .assistant import router as assistant_router
 from .help import router as help_router
+from .crops import router as crops_router
 
 api_router = APIRouter()
 api_router.include_router(weather_router)
 api_router.include_router(intelligence_router)
 api_router.include_router(assistant_router)
 api_router.include_router(help_router)
+api_router.include_router(crops_router)
 
 @api_router.get("/health", tags=["System Health"])
 async def api_health():

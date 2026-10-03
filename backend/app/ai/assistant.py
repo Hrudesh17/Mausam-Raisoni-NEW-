@@ -49,6 +49,7 @@ KNOWN_CITIES: Dict[str, Dict[str, Any]] = {
     "tokyo": {"name": "Tokyo", "lat": 35.6762, "lon": 139.6503, "state": "Tokyo", "country": "Japan"},
     "dubai": {"name": "Dubai", "lat": 25.2048, "lon": 55.2708, "state": "Dubai", "country": "UAE"},
     "singapore": {"name": "Singapore", "lat": 1.3521, "lon": 103.8198, "state": "Singapore", "country": "Singapore"},
+    "thiruvananthapuram": {"name": "Thiruvananthapuram", "lat": 8.5241, "lon": 76.9366, "state": "Kerala", "country": "India"},
 }
 
 # Common Spelling Variations & Typos Dict
@@ -152,7 +153,7 @@ class AIAssistantService:
         # Regex pattern for prepositions
         prep_pattern = r"\b(?:in|at|for|near|to|around|of|what about|and|how about|now)\s+([a-zA-Z0-9\s]{3,25}?)(?:\s+(?:right now|currently|today|tonight|tomorrow|this|next|morning|afternoon|evening|night|at|\d{1,2})|[?!.,]|$)"
         matches = re.findall(prep_pattern, msg_clean)
-        ignore_words = {"today", "tonight", "tomorrow", "morning", "afternoon", "evening", "night", "the weather", "weather", "temperature", "temp", "now", "my", "our", "a", "an", "the", "there", "here", "rain", "it rain", "wind", "aqi", "uv"}
+        ignore_words = {"today", "tonight", "tomorrow", "morning", "afternoon", "evening", "night", "the weather", "weather", "temperature", "temp", "now", "my", "our", "a", "an", "the", "there", "here", "rain", "it rain", "wind", "aqi", "uv", "set", "rise", "sun", "air quality", "air", "quality", "carry", "take", "umbrella", "plants", "water", "index", "level", "right", "strong", "time", "current", "forecast", "humidity"}
         for m in matches:
             candidate = m.strip()
             if candidate not in ignore_words and len(candidate) >= 3:
@@ -170,7 +171,18 @@ class AIAssistantService:
 
     @classmethod
     def classify_intent(cls, msg: str) -> str:
-        msg_l = msg.lower()
+        msg_l = msg.lower().strip()
+
+        # Greeting intent — must be checked FIRST before any weather keywords
+        greeting_words = {"hi", "hello", "hey", "namaste", "namaskar", "hola", "sup", "good morning", "good evening", "good afternoon", "good night", "howdy"}
+        if msg_l in greeting_words or \
+           (len(msg_l) <= 12 and any(msg_l.startswith(w) for w in ["hi ", "hey ", "hello", "namaste"])):
+            return "GREETING"
+        # Also catch multi-word greetings like "Hello! Good morning" that contain only greeting tokens
+        # Use word boundary regex to avoid false matches (e.g. "hi" inside "this")
+        weather_keywords = {"temperature", "temp", "rain", "wind", "aqi", "uv", "umbrella", "forecast", "weather", "humidity", "pressure", "visibility", "sunrise", "sunset", "fog", "storm", "pollution", "mask", "spray", "crop", "farm", "irrigat", "harvest", "travel", "commute", "run", "jog", "exercise", "event", "match", "beach", "swim", "compare", "water", "watering", "plant"}
+        if any(re.search(r"\b" + re.escape(g) + r"\b", msg_l) for g in greeting_words) and not any(w in msg_l for w in weather_keywords):
+            return "GREETING"
 
         if any(w in msg_l for w in ["compare", "versus", "vs", "difference between"]):
             return "WEATHER_COMPARISON"
@@ -187,7 +199,7 @@ class AIAssistantService:
         if any(w in msg_l for w in ["travel", "trip", "highway", "expressway", "journey", "route", "drive"]):
             return "TRAVEL_ADVISORY"
 
-        if any(w in msg_l for w in ["spray", "pesticide", "crop", "farm", "irrigate", "irrigation", "water plants", "harvest", "krishi"]):
+        if any(w in msg_l for w in ["spray", "pesticide", "crop", "farm", "irrigate", "irrigation", "water plants", "water my", "watering", "harvest", "krishi"]):
             return "KRISHI_ADVISORY"
 
         if any(w in msg_l for w in ["event", "match", "party", "wedding", "ceremony", "shoot", "outdoor event", "cricket"]):
@@ -211,11 +223,11 @@ class AIAssistantService:
         if any(w in msg_l for w in ["aqi", "air quality", "pollution", "pm2.5", "pm10", "mask"]):
             return "AQI"
 
-        if any(w in msg_l for w in ["uv", "uv index", "sun", "sunlight", "solar", "sunscreen"]):
-            return "UV"
-
-        if any(w in msg_l for w in ["sunrise", "sunset", "golden hour", "twilight", "daylight"]):
+        if any(w in msg_l for w in ["sunrise", "sunset", "golden hour", "twilight", "daylight", "sun rise", "sun set"]):
             return "SUNRISE_SUNSET"
+
+        if any(w in msg_l for w in ["uv", "uv index", "sunlight", "solar", "sunscreen"]):
+            return "UV"
 
         if any(w in msg_l for w in ["feels like", "apparent temp", "heat index", "how hot will it feel"]):
             return "FEELS_LIKE"
@@ -786,27 +798,97 @@ class AIAssistantService:
         elif intent == "KRISHI_ADVISORY":
             wind_s = curr.wind_speed
             rain_p = curr.precipitation_probability
-            if lang == "bn":
-                spray = "স্প্রে করার উপযুক্ত" if wind_s < 15 and rain_p < 40 else "ঝড়ো বাতাস / বৃষ্টির সতর্কতা"
-                reply = f"{loc}-এর জন্য কৃষি পরামর্শ: কীটনাশক স্প্রে '{spray}' (বাতাস {wind_s} কিমি/ঘণ্টা)। বৃষ্টির ঝুঁকি {rain_p}% এবং আর্দ্রতা {curr.humidity}%।"
-                suggested_actions = ["স্প্রে করার নিরাপদ সময়", "মাটির আর্দ্রতা", "আর্দ্রতার ধারা"]
-            elif lang == "te":
-                spray = "పిచికారీకి అనుకూలం" if wind_s < 15 and rain_p < 40 else "ఈదురు గాలులు / వర్ష హెచ్చరిక"
-                reply = f"{loc} వ్యవసాయ సలహా: పురుగుమందుల పిచికారీ '{spray}' (గాలి వేగం {wind_s} కిమీ/గం). వర్ష ప్రమాదం {rain_p}% మరియు తేమ {curr.humidity}%."
-                suggested_actions = ["పిచికారీ సురక్షిత సమయం", "నేల తేమ", "తేమ సరళి"]
-            elif lang == "mr":
-                spray = "फवारणीसाठी सुरक्षित" if wind_s < 15 and rain_p < 40 else "जोरदार वारा / पावसाची दक्षता"
-                reply = f"{loc} कृषी सल्ला: कीटकनाशक फवारणी '{spray}' (वाऱ्याचा वेग {wind_s} किमी/तास). पावसाचा धोका {rain_p}% आणि आर्द्रता {curr.humidity}% आहे."
-                suggested_actions = ["फवारणीची सुरक्षित वेळ", "जमिनीतील ओलावा", "आर्द्रता कल"]
-            elif lang == "hi":
-                spray = "छिड़काव के लिए सुरक्षित" if wind_s < 15 and rain_p < 40 else "तेज हवा / बारिश की सावधानी"
-                reply = f"{loc} के लिए कृषि परामर्श: कीटनाशक छिड़काव '{spray}' (हवा {wind_s} किमी/घंटा)। बारिश का जोखिम {rain_p}% और आर्द्रता {curr.humidity}% है।"
-                suggested_actions = ["छिड़काव का सुरक्षित समय", "मिट्टी की नमी", "आर्द्रता रुझान"]
+            
+            # Check if this is specifically a crop recommendation / sowing query
+            is_crop_query = any(k in msg_l for k in ["crop", "sow", "grow", "cultivat", "which crop", "what to grow", "seed"])
+            recommended_crop_info = None
+            if is_crop_query:
+                try:
+                    from ..services.crop_service import crop_service
+                    from ..models.crops import CropPredictionRequest
+                    rain_est = round(max(25.0, curr.precipitation * 20.0 + (curr.humidity * 1.5)), 1)
+                    req = CropPredictionRequest(
+                        nitrogen=90.0,
+                        phosphorus=42.0,
+                        potassium=43.0,
+                        temperature=curr.temperature,
+                        humidity=float(curr.humidity),
+                        ph=6.5,
+                        rainfall=rain_est,
+                        location_name=loc
+                    )
+                    crop_res = crop_service.predict(req)
+                    recommended_crop_info = crop_res
+                except Exception as e:
+                    logger.warning(f"Failed to fetch ML crop for chat: {e}")
+
+            if recommended_crop_info:
+                cname = recommended_crop_info.recommended_crop
+                conf_pct = int(recommended_crop_info.confidence * 100)
+                if lang == "bn":
+                    reply = f"{loc}-এর বর্তমান জলবায়ুতে ({curr.temperature}°C, {curr.humidity}% আর্দ্রতা) **{cname}** চাষের জন্য সবচেয়ে উপযোগী ({conf_pct}% অনুকূল)। এটি কৃষি বিশেষজ্ঞদের পরামর্শ অনুসারে বপন করুন।"
+                    suggested_actions = ["বপনের সঠিক সময়", "স্প্রে করার নিরাপদ সময়", "মাটির আর্দ্রতা"]
+                elif lang == "te":
+                    reply = f"{loc} ప్రస్తుత వాతావరణానికి ({curr.temperature}°C, {curr.humidity}% తేమ) **{cname}** సాగు అత్యంత అనుకూలం ({conf_pct}% అనుకూలత). స్థానిక KVK సలహాను సంప్రదించండి."
+                    suggested_actions = ["విత్తే సమయం", "పిచికారీ సురక్షిత సమయం", "నేల తేమ"]
+                elif lang == "mr":
+                    reply = f"{loc} च्या सध्याच्या हवामानानुसार ({curr.temperature}°C, {curr.humidity}% आर्द्रता) **{cname}** पिकाची लागवड सर्वात फायदेशीर आहे ({conf_pct}% अनुकूलता)."
+                    suggested_actions = ["पेरणीची वेळ", "फवारणीची सुरक्षित वेळ", "जमिनीतील ओलावा"]
+                elif lang == "hi":
+                    reply = f"{loc} की वर्तमान जलवायु ({curr.temperature}°C, {curr.humidity}% आर्द्रता) में **{cname}** की खेती सबसे उपयुक्त है ({conf_pct}% अनुकूलता)।"
+                    suggested_actions = ["बुवाई का समय", "छिड़काव का सुरक्षित समय", "मिट्टी की नमी"]
+                else:
+                    reply = f"Based on {loc}'s current agro-climatic conditions ({curr.temperature}°C, {curr.humidity}% humidity, {curr.precipitation} mm rain), **{cname}** is the best crop to cultivate ({conf_pct}% confidence)."
+                    suggested_actions = ["Sowing calendar", "Safe spraying window", "Soil moisture outlook"]
+                structured_data = {
+                    "location": loc,
+                    "recommended_crop": cname,
+                    "confidence": recommended_crop_info.confidence,
+                    "source": recommended_crop_info.source
+                }
             else:
-                spray = "Safe for Spraying" if wind_s < 15 and rain_p < 40 else "High Wind / Rain Caution"
-                reply = f"Krishi Advisory for {loc}: Spraying safety is '{spray}' (wind {wind_s} km/h). Rain risk is {rain_p}% and humidity is {curr.humidity}%."
-                suggested_actions = ["Safe spraying window", "Soil moisture outlook", "Humidity trend"]
-            structured_data = {"location": loc, "spraying_safety": spray, "wind_speed": wind_s}
+                if lang == "bn":
+                    spray = "স্প্রে করার উপযুক্ত" if wind_s < 15 and rain_p < 40 else "ঝড়ো বাতাস / বৃষ্টির সতর্কতা"
+                    reply = f"{loc}-এর জন্য কৃষি পরামর্শ: কীটনাশক স্প্রে '{spray}' (বাতাস {wind_s} কিমি/ঘণ্টা)। বৃষ্টির ঝুঁকি {rain_p}% এবং আর্দ্রতা {curr.humidity}%।"
+                    suggested_actions = ["স্প্রে করার নিরাপদ সময়", "মাটির আর্দ্রতা", "আর্দ্রতার ধারা"]
+                elif lang == "te":
+                    spray = "పిచికారీకి అనుకూలం" if wind_s < 15 and rain_p < 40 else "ఈదురు గాలులు / వర్ష హెచ్చరిక"
+                    reply = f"{loc} వ్యవసాయ సలహా: పురుగుమందుల పిచికారీ '{spray}' (గాలి వేగం {wind_s} కిమీ/గం). వర్ష ప్రమాదం {rain_p}% మరియు తేమ {curr.humidity}%."
+                    suggested_actions = ["పిచికారీ సురక్షిత సమయం", "నేల తేమ", "తేమ సరళి"]
+                elif lang == "mr":
+                    spray = "फवारणीसाठी सुरक्षित" if wind_s < 15 and rain_p < 40 else "जोरदार वारा / पावसाची दक्षता"
+                    reply = f"{loc} कृषी सल्ला: कीटकनाशक फवारणी '{spray}' (वाऱ्याचा वेग {wind_s} किमी/तास). पावसाचा धोका {rain_p}% आणि आर्द्रता {curr.humidity}% आहे."
+                    suggested_actions = ["फवारणीची सुरक्षित वेळ", "जमिनीतील ओलावा", "आर्द्रता कल"]
+                elif lang == "hi":
+                    spray = "छिड़काव के लिए सुरक्षित" if wind_s < 15 and rain_p < 40 else "तेज हवा / बारिश की सावधानी"
+                    reply = f"{loc} के लिए कृषि परामर्श: कीटनाशक छिड़काव '{spray}' (हवा {wind_s} किमी/घंटा)। बारिश का जोखिम {rain_p}% और आर्द्रता {curr.humidity}% है।"
+                    suggested_actions = ["छिड़काव का सुरक्षित समय", "मिट्टी की नमी", "आर्द्रता रुझान"]
+                else:
+                    spray = "Safe for Spraying" if wind_s < 15 and rain_p < 40 else "High Wind / Rain Caution"
+                    reply = f"Krishi Advisory for {loc}: Spraying safety is '{spray}' (wind {wind_s} km/h). Rain risk is {rain_p}% and humidity is {curr.humidity}%."
+                    suggested_actions = ["Safe spraying window", "Soil moisture outlook", "Humidity trend"]
+                structured_data = {"location": loc, "spraying_safety": spray, "wind_speed": wind_s}
+
+        elif intent == "GREETING":
+            # Friendly greeting — do NOT dump weather data
+            ctx_name = (context.name if context and getattr(context, "name", None) else "")
+            greeting_name = f" {ctx_name}," if ctx_name else ","
+            if lang == "bn":
+                reply = f"নমস্কার{greeting_name} আমি বায়ুসিঙ্ক সহায়ক! আপনি কি {loc}-এর আবহাওয়া, বৃষ্টি, বায়ু মান বা UV সম্পর্কে জানতে চান? আমি সাহায্য করতে প্রস্তুত!"
+                suggested_actions = ["বর্তমান তাপমাত্রা কত?", "আজ কি বৃষ্টি হবে?", "বাতাসের গতি কেমন?", "বায়ু মান পরীক্ষা করুন"]
+            elif lang == "te":
+                reply = f"నమస్కారం{greeting_name} నేను వాయుసింక్ సహాయక్! {loc} వాతావరణం, వర్షం, AQI లేదా UV గురించి తెలుసుకోవాలా? నేను సహాయం చేయడానికి సిద్ధంగా ఉన్నాను!"
+                suggested_actions = ["ప్రస్తుత ఉష్ణోగ్రత ఎంత?", "ఈరోజు వర్షం పడుతుందా?", "గాలి వేగం ఎంత?", "గాలి నాణ్యత తనిఖీ"]
+            elif lang == "mr":
+                reply = f"नमस्कार{greeting_name} मी वायुसिंक सहाय्यक आहे! {loc} च्या हवामान, पाऊस, AQI किंवा UV बद्दल विचारायचे आहे का? मी मदतीसाठी तयार आहे!"
+                suggested_actions = ["सध्याचे तापमान काय आहे?", "आज पाऊस पडेल का?", "वाऱ्याचा वेग किती आहे?", "हवेची गुणवत्ता तपासा"]
+            elif lang == "hi":
+                reply = f"नमस्ते{greeting_name} मैं वायुसिंक सहायक हूँ! क्या आप {loc} के मौसम, बारिश, वायु गुणवत्ता या UV के बारे में जानना चाहते हैं? मैं सहायता के लिए तैयार हूँ!"
+                suggested_actions = ["अभी तापमान क्या है?", "क्या आज बारिश होगी?", "हवा की गति कैसी है?", "वायु गुणवत्ता जांचें"]
+            else:
+                reply = f"Hello{greeting_name} I'm VayuSync Sahayak, your weather AI companion! I'm monitoring live conditions for **{loc}** right now. What would you like to know — temperature, rain, AQI, wind, or UV?"
+                suggested_actions = ["What is the temperature right now?", "Will it rain today?", "Check Air Quality Index", "How strong is the wind?"]
+            structured_data = {"location": loc}
 
         else:
             if lang == "bn":
@@ -825,6 +907,7 @@ class AIAssistantService:
                 reply = f"{loc} is currently {curr.temperature}°C (feels like {curr.feels_like}°C, {curr.condition_text}). Humidity is {curr.humidity}%, wind is {curr.wind_speed} km/h, and rain risk is {curr.precipitation_probability}%."
                 suggested_actions = ["What is the temperature right now?", "Will it rain today?", "How strong is the wind?"]
             structured_data = {"location": loc, "temperature": curr.temperature, "feels_like": curr.feels_like, "rain_prob": curr.precipitation_probability, "aqi": curr.aqi}
+
 
         # ── 4. DYNAMIC LLM REWRITING (IF ENABLED) ─────────────────────────────
         if settings.GEMINI_API_KEY:

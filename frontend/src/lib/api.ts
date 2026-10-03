@@ -15,8 +15,12 @@ import {
   FeedbackSubmission,
   FeedbackSubmissionResponse,
   NationalLeaderboardResponse,
-  IssueReportSubmission
+  IssueReportSubmission,
+  CropPredictionRequest,
+  CropPredictionResponse,
+  CropClimateResponse
 } from './types';
+
 import { saveCachedWeather, saveCachedIntelligence, getCachedWeather, getCachedIntelligence } from './storage';
 import { fetchLiveOpenMeteoWeather } from './openMeteoLive';
 
@@ -326,9 +330,11 @@ export async function chatWithAssistant(
   session_id?: string;
   confidence?: number;
 }> {
+  const apiBase = getApiBase();
+  const chatUrl = `${apiBase}/assistant/chat`;
+
   try {
-    const apiBase = getApiBase();
-    const res = await fetch(`${apiBase}/assistant/chat`, {
+    const res = await fetch(chatUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -345,20 +351,66 @@ export async function chatWithAssistant(
       }),
     });
     if (res.ok) return await res.json();
+
+    // Non-2xx — log real status so DevTools shows the actual problem
+    console.error('[VayuSync Sahayak] Backend error:', res.status, res.statusText, 'URL:', chatUrl);
   } catch (err) {
-    console.warn('Assistant chat failed, returning error response', err);
+    // Network / CORS / connection refused — log real error + failing URL
+    console.error('[VayuSync Sahayak] Backend unreachable. URL:', chatUrl, 'Error:', err);
   }
 
-  const loc = conversationLocation || dashboardLocation || weather.location.name;
+  // ── LOCAL FALLBACK: answer from dashboard Open-Meteo data ────────────────
+  // Order: 1) dashboard weather object  2) generic helpful message
+  const loc = conversationLocation || dashboardLocation || weather?.location?.name || 'Pune';
+  const curr = weather?.current;
+  let fallbackReply = '';
+  const msgL = message.toLowerCase();
+
+  if (curr) {
+    if (msgL.includes('umbrella') || msgL.includes('rain') || msgL.includes('baarish') || msgL.includes('shower')) {
+      const rainProb = curr.precipitation_probability ?? 0;
+      fallbackReply = rainProb > 40
+        ? `🌧️ Yes — carry an umbrella! Rain probability in ${loc} is **${rainProb}%**. Conditions: ${curr.condition_text}.`
+        : `☀️ No umbrella needed right now. Rain probability in ${loc} is only **${rainProb}%** — mostly ${curr.condition_text}.`;
+    } else if (msgL.includes('aqi') || msgL.includes('air quality') || msgL.includes('pollution') || msgL.includes('pollution')) {
+      const aqi = curr.aqi ?? 'N/A';
+      const aqiCat = curr.aqi_category ?? 'Unknown';
+      fallbackReply = `🌬️ Air Quality in ${loc}: **AQI ${aqi}** — ${aqiCat}. PM2.5: ${curr.pm2_5 ?? 'N/A'} µg/m³.`;
+    } else if (msgL.includes('temperature') || msgL.includes('temp') || msgL.includes('hot') || msgL.includes('cold') || msgL.includes('warm')) {
+      fallbackReply = `🌡️ ${loc} is currently **${curr.temperature}°C** (feels like ${curr.feels_like}°C). Humidity: ${curr.humidity}%. Conditions: ${curr.condition_text}.`;
+    } else if (msgL.includes('wind')) {
+      fallbackReply = `💨 Wind in ${loc}: **${curr.wind_speed} km/h** (gusts ${curr.wind_gust ?? curr.wind_speed} km/h).`;
+    } else if (msgL.includes('uv') || msgL.includes('sunscreen') || msgL.includes('sun')) {
+      const uv = curr.uv_index ?? 'N/A';
+      fallbackReply = `☀️ UV Index in ${loc}: **${uv}**. ${Number(uv) >= 6 ? 'High — apply SPF 30+ sunscreen.' : 'Moderate — short outdoor exposure is safe.'}`;
+    } else if (msgL.includes('humidity')) {
+      fallbackReply = `💧 Humidity in ${loc} is **${curr.humidity}%**. Temperature: ${curr.temperature}°C.`;
+    } else {
+      // General answer built entirely from real dashboard data
+      fallbackReply =
+        `🌤️ **${loc} — Current Conditions**\n\n` +
+        `🌡️ Temperature: **${curr.temperature}°C** (feels like ${curr.feels_like}°C)\n` +
+        `💧 Humidity: **${curr.humidity}%**\n` +
+        `🌧️ Rain probability: **${curr.precipitation_probability ?? 0}%**\n` +
+        `🌬️ Wind: **${curr.wind_speed} km/h**\n` +
+        `☁️ Conditions: **${curr.condition_text}**\n` +
+        `🌫️ AQI: **${curr.aqi ?? 'N/A'}** (${curr.aqi_category ?? ''})\n\n` +
+        `_Answering from dashboard data — backend intelligence service is currently offline._`;
+    }
+  } else {
+    fallbackReply = `⚠️ Weather data for ${loc} is not yet loaded. Please wait for the dashboard to finish loading, then retry.`;
+  }
+
   return {
     success: false,
-    reply: `I couldn't retrieve live weather data for ${loc} right now. Please check your backend connection.`,
-    answer: `I couldn't retrieve live weather data for ${loc} right now. Please check your backend connection.`,
-    suggested_actions: ['Retry query', 'Check Air Quality Index'],
-    source: 'VayuSync Local Engine',
+    reply: fallbackReply,
+    answer: fallbackReply,
+    suggested_actions: ['Retry query', 'Check Air Quality Index', 'Should I carry an umbrella?', 'What is the weather in Pune?'],
+    source: 'VayuSync Local Engine (Dashboard Data)',
     conversation_location: loc,
     input_mode: inputMode,
     session_id: sessionId || '',
+    confidence: 0.7,
   };
 }
 
@@ -916,6 +968,239 @@ function getFallbackIntelligence(weather: WeatherResponse, context: UserContext)
       athlete_advisory: 'Optimal line-of-sight for cycling, running, and track training.',
       event_planner_advisory: 'Uninhibited sightlines for outdoor setup and drone photography.',
       is_available: true,
+    },
+  };
+}
+
+/**
+ * Fetch ML Crop Prediction with strict input validation and fallback resilience
+ */
+export async function fetchCropPrediction(payload: CropPredictionRequest): Promise<CropPredictionResponse> {
+  const start = performance.now();
+  const apiBase = getApiBase();
+  const endpoint = `${apiBase}/intelligence/crops/predict`;
+
+  try {
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const duration = Math.round(performance.now() - start);
+
+    if (res.ok) {
+      const data: CropPredictionResponse = await res.json();
+      logDiagnostics({
+        timestamp: new Date().toISOString(),
+        endpoint: '/api/v1/intelligence/crops/predict',
+        method: 'POST',
+        status: res.status,
+        durationMs: duration,
+        location: payload.location_name,
+      });
+      return data;
+    }
+
+    if (res.status === 422) {
+      const errJson = await res.json();
+      const msg = Array.isArray(errJson.detail)
+        ? errJson.detail.map((e: any) => `${e.loc ? e.loc.join('.') + ': ' : ''}${e.msg}`).join(', ')
+        : (errJson.detail?.message || JSON.stringify(errJson.detail));
+      throw new Error(`Validation Error: ${msg}`);
+    }
+
+    throw new Error(`Server returned HTTP ${res.status}`);
+  } catch (err: any) {
+    const duration = Math.round(performance.now() - start);
+    logDiagnostics({
+      timestamp: new Date().toISOString(),
+      endpoint: '/api/v1/intelligence/crops/predict',
+      method: 'POST',
+      durationMs: duration,
+      error: err.message,
+      location: payload.location_name,
+    });
+
+    // If validation error, re-throw to display inline
+    if (err.message && err.message.startsWith('Validation Error')) {
+      throw err;
+    }
+
+    // Resilient client-side agronomic fallback when backend is unreachable
+    return generateClientCropFallback(payload);
+  }
+}
+
+/**
+ * Fetch 30-day agro-climatic telemetry for location with Open-Meteo fallback
+ */
+export async function fetchCropClimate(
+  lat: number, 
+  lon: number, 
+  city?: string, 
+  signal?: AbortSignal
+): Promise<CropClimateResponse> {
+  const apiBase = getApiBase();
+  const endpoint = `${apiBase}/intelligence/crops/climate?lat=${lat}&lon=${lon}${city ? `&city=${encodeURIComponent(city)}` : ''}`;
+
+  try {
+    const res = await fetch(endpoint, { signal });
+    if (res.ok) {
+      const data: CropClimateResponse = await res.json();
+      return data;
+    }
+  } catch (err: any) {
+    if (err.name === 'AbortError') {
+      throw err;
+    }
+    // Fall back to direct Open-Meteo API query if backend is unreachable
+  }
+
+  // Direct Open-Meteo query fallback (exact same 30-day formula)
+  try {
+    const openMeteoUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&daily=temperature_2m_mean,relative_humidity_2m_mean,precipitation_sum&past_days=23&forecast_days=7&timezone=auto`;
+    const omRes = await fetch(openMeteoUrl, { signal });
+    if (omRes.ok) {
+      const omData = await omRes.json();
+      const daily = omData.daily || {};
+      const rawTemps: (number | null)[] = daily.temperature_2m_mean || [];
+      const rawHums: (number | null)[] = daily.relative_humidity_2m_mean || [];
+      const rawPrecips: (number | null)[] = daily.precipitation_sum || [];
+
+      const validTemps = rawTemps.filter((t): t is number => typeof t === 'number' && !isNaN(t));
+      const validHums = rawHums.filter((h): h is number => typeof h === 'number' && !isNaN(h));
+      const validPrecips = rawPrecips.filter((p): p is number => typeof p === 'number' && !isNaN(p));
+
+      if (validTemps.length > 0 && validHums.length > 0) {
+        const meanTemp = Math.round((validTemps.reduce((a, b) => a + b, 0) / validTemps.length) * 10) / 10;
+        const meanHum = Math.round((validHums.reduce((a, b) => a + b, 0) / validHums.length) * 10) / 10;
+        const sumRain = Math.round(validPrecips.reduce((a, b) => a + b, 0) * 10) / 10;
+
+        return {
+          temperature: meanTemp,
+          humidity: meanHum,
+          rainfall: sumRain,
+          basis: '30-day agro-climatic average',
+          window: '23 past days + 7-day forecast',
+          source: 'Open-Meteo API',
+          fetched_at: new Date().toISOString(),
+          location_name: city,
+          is_available: true,
+          error_message: null,
+        };
+      }
+    }
+  } catch (err: any) {
+    if (err.name === 'AbortError') {
+      throw err;
+    }
+  }
+
+  // Unavailable — do NOT return fake mock data
+  return {
+    temperature: null,
+    humidity: null,
+    rainfall: null,
+    basis: '30-day agro-climatic average',
+    window: '23 past days + 7-day forecast',
+    source: 'Open-Meteo (Unavailable)',
+    fetched_at: new Date().toISOString(),
+    location_name: city,
+    is_available: false,
+    error_message: "Couldn't fetch live data - enter manually",
+  };
+}
+
+/**
+ * Fetch live weather-derived defaults for crop prediction form (legacy alias)
+ */
+export async function fetchCropDefaults(lat: number, lon: number, city: string) {
+  const climate = await fetchCropClimate(lat, lon, city);
+  return {
+    city,
+    latitude: lat,
+    longitude: lon,
+    temperature: climate.temperature ?? 25.0,
+    humidity: climate.humidity ?? 65.0,
+    rainfall: climate.rainfall ?? 150.0,
+    basis: climate.basis,
+    source: climate.source,
+    is_available: climate.is_available,
+  };
+}
+
+
+function generateClientCropFallback(req: CropPredictionRequest): CropPredictionResponse {
+  let rec = 'Maize';
+  let alts = ['Pigeonpeas', 'Cotton'];
+  if (req.rainfall > 180 && req.temperature >= 20) {
+    rec = 'Rice';
+    alts = ['Jute', 'Coconut'];
+  } else if (req.temperature > 35 && req.rainfall < 80) {
+    rec = 'Mothbeans';
+    alts = ['Mungbean', 'Muskmelon'];
+  } else if (req.temperature < 22 && req.rainfall < 120) {
+    rec = 'Chickpea';
+    alts = ['Lentil', 'Maize'];
+  } else if (req.humidity > 80 && req.temperature > 25) {
+    rec = 'Papaya';
+    alts = ['Banana', 'Cotton'];
+  }
+
+  const cropImageMap: Record<string, string> = {
+    Rice: '/images/crops/rice.jpg',
+    Maize: '/images/crops/maize.jpg',
+    Jute: '/images/crops/Jute.jpg',
+    Cotton: '/images/crops/cotton.jpg',
+    Coconut: '/images/crops/coconut.jpg',
+    Papaya: '/images/crops/Papaya.jpg',
+    Orange: '/images/crops/orange.jpg',
+    Apple: '/images/crops/apple.jpg',
+    Muskmelon: '/images/crops/Muskmelon.jpg',
+    Watermelon: '/images/crops/watermelon.jpg',
+    Grapes: '/images/crops/grapes.jpg',
+    Mango: '/images/crops/mango.jpg',
+    Banana: '/images/crops/banana.jpg',
+    Pomegranate: '/images/crops/pomegrante.jpg',
+    Lentil: '/images/crops/lentil.jpg',
+    Blackgram: '/images/crops/blackgram.jpg',
+    Mungbean: '/images/crops/mungbean.jpg',
+    Mothbeans: '/images/crops/mothbeans.jpg',
+    Pigeonpeas: '/images/crops/pigeonbeans.jpg',
+    Kidneybeans: '/images/crops/kidneybeans.jpg',
+    Chickpea: '/images/crops/chickpea.jpg',
+    Coffee: '/images/crops/Coffee.jpeg',
+  };
+
+  return {
+    recommended_crop: rec,
+    confidence: 0.82,
+    primary_image_url: cropImageMap[rec] || '/images/crops/rice.jpg',
+    top_alternatives: alts.map(a => ({
+      crop: a,
+      confidence: 0.72,
+      image_url: cropImageMap[a] || '/images/crops/rice.jpg',
+      category: 'Agricultural Pulse/Grain',
+      ideal_season: 'Seasonal',
+    })),
+    source: 'rule_based',
+    reasoning: `Selected ${rec} using regional agronomy guidelines for ${req.temperature}°C, ${req.humidity}% humidity, and ${req.rainfall} mm rainfall.`,
+    growth_hints: {
+      'Ideal Sowing Window': 'Monsoon onset / Early Seasonal',
+      'Recommended Soil Management': 'Maintain balanced N:P:K organic amendment',
+    },
+    advisory_note: 'Advisory only — consult your local Krishi Vigyan Kendra (KVK) for certified seed variety and seasonal sowing guidance.',
+    inputs_echo: {
+      nitrogen: req.nitrogen,
+      phosphorus: req.phosphorus,
+      potassium: req.potassium,
+      temperature: req.temperature,
+      humidity: req.humidity,
+      ph: req.ph,
+      rainfall: req.rainfall,
     },
   };
 }

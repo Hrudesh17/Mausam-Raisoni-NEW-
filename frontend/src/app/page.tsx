@@ -297,7 +297,7 @@ function MainApp() {
       />
 
       {/* Main Container */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 space-y-6 pb-24 md:pb-8">
+      <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 space-y-6 pb-28 md:pb-28">
         
         {fetchError && !weather && (
           <div className="rounded-3xl glass-panel p-8 text-center space-y-4 max-w-xl mx-auto border border-rose-200 dark:border-rose-900/50 bg-white/80 dark:bg-slate-900/80">

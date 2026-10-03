@@ -163,9 +163,9 @@ export const MausamScoreCard: React.FC<MausamScoreCardProps> = ({
                   <Thermometer className="w-4 h-4" />
                 </div>
                 <div className="min-w-0">
-                  <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate">{t.metric_temp}</p>
-                  <p className="text-sm font-bold text-slate-900 dark:text-white leading-tight">{curr.temperature}°C</p>
-                  <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate">{t.metric_feels_like} {curr.feels_like}°C</p>
+                  <p className="text-[10px] sm:text-[11px] font-medium text-slate-500 dark:text-slate-400 leading-tight truncate" title={t.metric_temp}>{t.metric_temp}</p>
+                  <p className="text-sm font-bold text-slate-900 dark:text-white leading-tight mt-0.5 whitespace-nowrap">{curr.temperature}°C</p>
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-tight mt-0.5 truncate">{t.metric_feels_like} {curr.feels_like}°C</p>
                 </div>
               </div>
 
@@ -174,9 +174,9 @@ export const MausamScoreCard: React.FC<MausamScoreCardProps> = ({
                   <Droplets className="w-4 h-4" />
                 </div>
                 <div className="min-w-0">
-                  <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate">{t.metric_rain}</p>
-                  <p className="text-sm font-bold text-slate-900 dark:text-white leading-tight">{curr.precipitation_probability}%</p>
-                  <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate">{curr.precipitation > 0 ? `${curr.precipitation} mm` : 'Dry'}</p>
+                  <p className="text-[10px] sm:text-[11px] font-medium text-slate-500 dark:text-slate-400 leading-tight truncate" title={t.metric_rain}>{t.metric_rain}</p>
+                  <p className="text-sm font-bold text-slate-900 dark:text-white leading-tight mt-0.5 whitespace-nowrap">{curr.precipitation_probability}%</p>
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-tight mt-0.5 truncate">{curr.precipitation > 0 ? `${curr.precipitation} mm` : 'Dry'}</p>
                 </div>
               </div>
 
@@ -185,9 +185,9 @@ export const MausamScoreCard: React.FC<MausamScoreCardProps> = ({
                   <Wind className="w-4 h-4" />
                 </div>
                 <div className="min-w-0">
-                  <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate">{t.metric_wind}</p>
-                  <p className="text-sm font-bold text-slate-900 dark:text-white leading-tight">{curr.wind_speed} km/h</p>
-                  <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate">Gust {curr.wind_gust || curr.wind_speed} km/h</p>
+                  <p className="text-[10px] sm:text-[11px] font-medium text-slate-500 dark:text-slate-400 leading-tight truncate" title={t.metric_wind}>{t.metric_wind}</p>
+                  <p className="text-sm font-bold text-slate-900 dark:text-white leading-tight mt-0.5 whitespace-nowrap">{curr.wind_speed} km/h</p>
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-tight mt-0.5 truncate">Gust {curr.wind_gust || curr.wind_speed} km/h</p>
                 </div>
               </div>
 
@@ -198,9 +198,9 @@ export const MausamScoreCard: React.FC<MausamScoreCardProps> = ({
                   <Activity className="w-4 h-4" />
                 </div>
                 <div className="min-w-0">
-                  <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate">{t.metric_aqi}</p>
-                  <p className="text-sm font-bold text-slate-900 dark:text-white leading-tight">AQI {curr.aqi}</p>
-                  <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate">{curr.aqi_category}</p>
+                  <p className="text-[10px] sm:text-[11px] font-medium text-slate-500 dark:text-slate-400 leading-tight truncate" title={t.metric_aqi}>{t.metric_aqi}</p>
+                  <p className="text-sm font-bold text-slate-900 dark:text-white leading-tight mt-0.5 whitespace-nowrap">AQI {curr.aqi}</p>
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-tight mt-0.5 truncate">{curr.aqi_category}</p>
                 </div>
               </div>
             </div>
@@ -229,7 +229,11 @@ export const MausamScoreCard: React.FC<MausamScoreCardProps> = ({
                     UV -{scoreData.breakdown.uv_penalty} pts
                   </span>
                 )}
-                {score >= 80 && (
+                {score >= 80 &&
+                  (scoreData.breakdown.precipitation_penalty === 0 &&
+                    scoreData.breakdown.aqi_penalty === 0 &&
+                    scoreData.breakdown.wind_penalty === 0 &&
+                    scoreData.breakdown.uv_penalty === 0) && (
                   <span className="text-emerald-700 dark:text-emerald-400 font-medium">
                     ✓ All environmental factors optimal for daily routine
                   </span>

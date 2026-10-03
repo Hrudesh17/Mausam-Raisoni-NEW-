@@ -15,6 +15,8 @@ import { WeatherResponse, IntelligenceSummary, UserContext, RoutineWeatherImpact
 import { getPersonaConfig } from '../lib/personaConfig';
 import { useLanguage } from '../hooks/useLanguage';
 
+import { evaluateWateringWindow, normalizeWateringSchedule } from '../lib/agronomyEngine';
+
 interface RoutineTimelineProps {
   weather: WeatherResponse;
   intelligence: IntelligenceSummary;
@@ -29,11 +31,149 @@ export const RoutineTimeline: React.FC<RoutineTimelineProps> = ({
   activePersonaId,
 }) => {
   const { language, t } = useLanguage();
-  const impacts = intelligence.routine_impacts || [];
+  const rawImpacts = intelligence.routine_impacts || [];
   const hourly = weather.hourly || [];
+  const curr = weather.current;
 
   const primaryPersonaId = activePersonaId || (context.interests && context.interests[0]) || 'commute';
   const personaCfg = getPersonaConfig(primaryPersonaId, language);
+  const roleDetails = context.role_details;
+
+  // Generate persona-tailored routine items if in specialized roles like Krishi/Gardening
+  const impacts: RoutineWeatherImpact[] = React.useMemo(() => {
+    if (primaryPersonaId === 'gardening') {
+      const wateringSchedule = roleDetails?.gardening?.watering_schedule || 'Early Morning';
+      const normWatering = normalizeWateringSchedule(wateringSchedule);
+      const wateringEval = evaluateWateringWindow(wateringSchedule, hourly, curr);
+
+      const items: RoutineWeatherImpact[] = [
+        {
+          event_id: 'g-inspect',
+          event_title: 'Field Inspection & Soil Monitoring',
+          time_window: '06:00 - 08:00',
+          is_outdoor: true,
+          risk_level: curr.precipitation_probability >= 60 ? 'amber' : 'green',
+          impact_title: curr.precipitation_probability >= 60 ? 'Wet Field Conditions' : 'Optimal Field Scouting',
+          impact_details: `Morning temperature ${hourly[6]?.temperature ?? 24}°C with ${curr.humidity}% humidity.`,
+          proactive_action: 'Inspect crop leaf undersides for pests and check ground moisture levels.',
+        },
+      ];
+
+      // Watering slot specifically driven by selected watering schedule
+      if (normWatering === 'Afternoon') {
+        items.push({
+          event_id: 'g-water-noon',
+          event_title: 'Afternoon Crop Irrigation Slot',
+          time_window: '12:00 - 16:00',
+          is_outdoor: true,
+          risk_level: wateringEval.status === 'Avoid' ? 'amber' : wateringEval.status === 'Caution' ? 'yellow' : 'green',
+          impact_title: wateringEval.status === 'Avoid'
+            ? (wateringEval.metrics.maxRainProb >= 50 ? `Rain Expected (${wateringEval.metrics.maxRainProb}%) — Hold Irrigation` : `Midday Evaporation & Heat Stress (${wateringEval.metrics.maxTemp}°C, UV ${wateringEval.metrics.maxUV})`)
+            : wateringEval.status === 'Caution'
+            ? `Moderate Evaporation Loss (${wateringEval.metrics.maxTemp}°C)`
+            : 'Favorable Overcast Afternoon Irrigation',
+          impact_details: wateringEval.reason,
+          proactive_action: wateringEval.action,
+        });
+      } else if (normWatering === 'Late Evening') {
+        items.push({
+          event_id: 'g-water-eve',
+          event_title: 'Late Evening Root Irrigation Slot',
+          time_window: '17:00 - 20:00',
+          is_outdoor: true,
+          risk_level: wateringEval.status === 'Avoid' ? 'amber' : 'green',
+          impact_title: wateringEval.status === 'Avoid' ? 'Rain Expected — Hold Irrigation' : 'Cool Sunset Soil Irrigation',
+          impact_details: wateringEval.reason,
+          proactive_action: wateringEval.action,
+        });
+      } else if (normWatering === 'Twice Daily') {
+        items.push({
+          event_id: 'g-water-am',
+          event_title: 'Morning Split Irrigation Slot',
+          time_window: '06:00 - 08:00',
+          is_outdoor: true,
+          risk_level: 'green',
+          impact_title: 'Deep Root Zone Irrigation',
+          impact_details: 'Cool morning soil absorbs water efficiently before sun rises.',
+          proactive_action: 'Deliver 60% of daily irrigation quota to crop root base.',
+        });
+        items.push({
+          event_id: 'g-water-pm',
+          event_title: 'Evening Split Top-Up Slot',
+          time_window: '17:00 - 19:00',
+          is_outdoor: true,
+          risk_level: curr.precipitation_probability >= 50 ? 'amber' : 'green',
+          impact_title: curr.precipitation_probability >= 50 ? 'Rain Expected — Hold PM Slot' : 'Evening Hydration Top-Up',
+          impact_details: 'Replenishes midday transpiration loss under gentle evening conditions.',
+          proactive_action: 'Perform light soil top-up; avoid wetting leaf foliage.',
+        });
+      } else {
+        items.push({
+          event_id: 'g-water-morn',
+          event_title: 'Early Morning Deep Irrigation Window',
+          time_window: '05:00 - 08:00',
+          is_outdoor: true,
+          risk_level: wateringEval.status === 'Avoid' ? 'amber' : 'green',
+          impact_title: wateringEval.status === 'Avoid' ? 'Rain Expected — Hold Irrigation' : 'Prime Agromet Watering Window',
+          impact_details: wateringEval.reason,
+          proactive_action: wateringEval.action,
+        });
+      }
+
+      // Spraying window
+      const isHighWind = curr.wind_speed >= 18;
+      const isRainy = curr.precipitation_probability >= 40;
+      items.push({
+        event_id: 'g-spray',
+        event_title: 'Crop Spraying & Foliar Treatment Window',
+        time_window: '08:00 - 10:30',
+        is_outdoor: true,
+        risk_level: (isHighWind || isRainy) ? 'amber' : 'green',
+        impact_title: isHighWind ? `High Wind Spray Drift (${curr.wind_speed} km/h)` : isRainy ? `Rain Wash-Off Hazard (${curr.precipitation_probability}%)` : 'Safe Spraying Window',
+        impact_details: (isHighWind || isRainy) ? 'Adverse weather compromises pesticide adherence and heightens chemical drift risk.' : 'Winds below 15 km/h ensure uniform droplet deposition across crop foliage.',
+        proactive_action: (isHighWind || isRainy) ? 'Postpone foliar applications until winds calm below 15 km/h and rain clears.' : 'Proceed with scheduled organic / chemical pest protection.',
+      });
+
+      // Harvesting window
+      items.push({
+        event_id: 'g-harvest',
+        event_title: 'Produce Harvesting & Field Sorting',
+        time_window: '16:00 - 18:30',
+        is_outdoor: true,
+        risk_level: curr.precipitation_probability >= 50 ? 'amber' : 'green',
+        impact_title: curr.precipitation_probability >= 50 ? 'Rain Spoilage Risk' : 'Dry Harvest Conditions',
+        impact_details: curr.precipitation_probability >= 50 ? 'Excessive moisture during harvest induces post-harvest fungal decay.' : 'Mild late-afternoon conditions preserve produce freshness.',
+        proactive_action: curr.precipitation_probability >= 50 ? 'Delay harvesting vulnerable crops until field surfaces dry.' : 'Harvest ripe produce and store in shaded, aerated crates.',
+      });
+
+      return items;
+    }
+
+    if (rawImpacts.length > 0) return rawImpacts;
+
+    return [
+      {
+        event_id: 'ev-default-1',
+        event_title: 'Morning Routine & Outdoor Activity',
+        time_window: '06:30 - 08:30',
+        is_outdoor: true,
+        risk_level: 'green',
+        impact_title: 'Optimal Outdoor Window',
+        impact_details: `Pleasant morning temperature (${curr.temperature}°C) and light winds (${curr.wind_speed} km/h).`,
+        proactive_action: 'Proceed with scheduled outdoor activity.',
+      },
+      {
+        event_id: 'ev-default-2',
+        event_title: 'Evening Transit & Commute Window',
+        time_window: '17:00 - 19:30',
+        is_outdoor: true,
+        risk_level: curr.precipitation_probability >= 50 ? 'amber' : 'green',
+        impact_title: curr.precipitation_probability >= 50 ? 'Passing Rain Showers Likely' : 'Clear Commute Corridor',
+        impact_details: `Rain probability ${curr.precipitation_probability}% over ${weather.location.name}.`,
+        proactive_action: curr.precipitation_probability >= 50 ? 'Keep compact umbrella handy.' : 'Smooth transit conditions.',
+      },
+    ];
+  }, [primaryPersonaId, roleDetails, hourly, curr, rawImpacts, weather.location.name]);
 
   const getRiskBadge = (level: RoutineWeatherImpact['risk_level']) => {
     switch (level) {
@@ -91,12 +231,12 @@ export const RoutineTimeline: React.FC<RoutineTimelineProps> = ({
       </div>
 
       {/* Hourly Quick Scroll Rail */}
-      <div className="w-full overflow-x-auto pb-2 pt-1">
-        <div className="flex items-center gap-2 min-w-[720px]">
+      <div className="w-full overflow-x-auto pb-2 pt-1 scroll-smooth snap-x snap-mandatory">
+        <div className="flex items-center gap-2 min-w-[720px] px-0.5">
           {hourly.slice(0, 16).map((h, i) => (
             <div
               key={i}
-              className={`flex-1 min-w-[65px] p-2 rounded-xl text-center border transition ${
+              className={`flex-1 min-w-[65px] p-2 rounded-xl text-center border transition snap-start ${
                 h.precipitation_probability > 50
                   ? 'bg-sky-50 dark:bg-sky-950/60 border-sky-200 dark:border-sky-800 shadow-xs'
                   : 'bg-white dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 shadow-xs'

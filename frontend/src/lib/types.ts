@@ -406,3 +406,48 @@ export interface IntelligenceSummary {
   allergy_outlook?: AllergyOutlook | null;
   visibility_intel?: VisibilityIntelligence | null;
 }
+
+export interface CropPredictionRequest {
+  nitrogen: number;
+  phosphorus: number;
+  potassium: number;
+  temperature: number;
+  humidity: number;
+  ph: number;
+  rainfall: number;
+  location_name?: string;
+}
+
+export interface CropRecommendationItem {
+  crop: string;
+  confidence: number;
+  image_url: string;
+  category?: string;
+  ideal_season?: string;
+}
+
+export interface CropPredictionResponse {
+  recommended_crop: string;
+  confidence: number;
+  primary_image_url: string;
+  top_alternatives: CropRecommendationItem[];
+  source: 'ml_model' | 'rule_based' | 'cached';
+  reasoning: string;
+  growth_hints: Record<string, string>;
+  advisory_note: string;
+  inputs_echo: Record<string, number>;
+}
+
+export interface CropClimateResponse {
+  temperature?: number | null;
+  humidity?: number | null;
+  rainfall?: number | null;
+  basis: string;
+  window: string;
+  source: string;
+  fetched_at: string;
+  location_name?: string | null;
+  is_available: boolean;
+  error_message?: string | null;
+}
+

@@ -1,5 +1,10 @@
 import os
+from pathlib import Path
 from pydantic import BaseModel
+
+# Load .env file from the backend directory
+from dotenv import load_dotenv
+load_dotenv(Path(__file__).resolve().parent.parent.parent / ".env")
 
 class Settings(BaseModel):
     PROJECT_NAME: str = "VayuSync — Personalized Mausam Intelligence"

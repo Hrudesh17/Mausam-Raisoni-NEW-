@@ -657,6 +657,7 @@ export const PersonalizationModal: React.FC<PersonalizationModalProps> = ({
                         className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
                       >
                         <option value="Early Morning">{t.opt_early_morning}</option>
+                        <option value="Afternoon">{t.opt_afternoon}</option>
                         <option value="Late Evening">{t.opt_late_evening}</option>
                         <option value="Twice Daily">{t.opt_twice_daily}</option>
                       </select>

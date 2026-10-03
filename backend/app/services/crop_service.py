@@ -11,7 +11,9 @@ from ..models.crops import (
     CropPredictionRequest, 
     CropPredictionResponse, 
     CropRecommendationItem,
-    CropClimateResponse
+    CropClimateResponse,
+    FertilizerRecommendation,
+    NPKStatus
 )
 
 logger = logging.getLogger("vayusync.crop_service")
@@ -78,6 +80,34 @@ CROP_METADATA: Dict[str, Dict[str, str]] = {
     "Coffee": {"category": "Plantation Beverage", "ideal_season": "Highland Tropical Shade", "fertilizer": "NPK 120:90:120 kg/ha", "sowing": "June - Sept"},
 }
 
+# Crop-to-fertilizer mapping — agronomically justified by NPK ratios in CROP_METADATA
+# Keys: "Urea", "DAP", "MOP", "SSP", "17-17-17", "28-28", "10-26-26", "14-35-14", "20-20"
+CROP_FERTILIZER_MAP: Dict[str, Dict[str, str]] = {
+    "Rice":        {"primary": "Urea",     "secondary": "DAP",  "reasoning": "High nitrogen demand for vegetative growth. DAP provides phosphorus for root establishment."},
+    "Maize":       {"primary": "Urea",     "secondary": "DAP",  "reasoning": "Heavy nitrogen feeder; DAP at basal dose covers N+P. MOP top-dress at tasseling if K is low."},
+    "Jute":        {"primary": "17-17-17", "secondary": "SSP",  "reasoning": "Balanced NPK with SSP for sulphur — improves fibre quality and uniform development."},
+    "Cotton":      {"primary": "DAP",      "secondary": "MOP",  "reasoning": "High phosphorus for boll formation; MOP (Muriate of Potash) improves fibre strength and boll weight."},
+    "Coconut":     {"primary": "MOP",      "secondary": "SSP",  "reasoning": "Coconut is a high-potassium crop. MOP (KCl) for trunk strength and copra yield; SSP supplies phosphorus and sulphur."},
+    "Papaya":      {"primary": "17-17-17", "secondary": "MOP",  "reasoning": "Balanced NPK base; MOP top-dress improves fruit sweetness, shelf life and disease resistance."},
+    "Orange":      {"primary": "17-17-17", "secondary": "MOP",  "reasoning": "Balanced NPK; MOP at fruit fill stage improves rind quality, juice content and colour."},
+    "Apple":       {"primary": "17-17-17", "secondary": "MOP",  "reasoning": "Balanced nutrition; MOP application enhances fruit colour, firmness and cold-storage life."},
+    "Muskmelon":   {"primary": "Urea",     "secondary": "SSP",  "reasoning": "Urea for vine vigour; SSP provides phosphorus + sulphur for fruit set in short-season crop."},
+    "Watermelon":  {"primary": "17-17-17", "secondary": "MOP",  "reasoning": "Balanced NPK base; MOP at fruiting stage boosts sugar content and rind thickness."},
+    "Grapes":      {"primary": "17-17-17", "secondary": "MOP",  "reasoning": "Balanced NPK; MOP (Muriate of Potash) improves berry sugar content, colour and shelf life."},
+    "Mango":       {"primary": "17-17-17", "secondary": "MOP",  "reasoning": "Balanced NPK with MOP emphasis at fruit development for sweetness, colour and pulp quality."},
+    "Banana":      {"primary": "Urea",     "secondary": "MOP",  "reasoning": "High nitrogen (Urea) for pseudostem and leaf production; MOP for bunch weight, peel strength and quality."},
+    "Pomegranate": {"primary": "DAP",      "secondary": "MOP",  "reasoning": "DAP triggers flowering and fruit set; MOP post-anthesis for arils, juice content and post-harvest quality."},
+    "Lentil":      {"primary": "DAP",      "secondary": "SSP",  "reasoning": "DAP + SSP at sowing — phosphorus stimulates Rhizobium nodulation. SSP adds sulphur for pulse protein. Avoid excess N."},
+    "Blackgram":   {"primary": "DAP",      "secondary": "SSP",  "reasoning": "DAP + SSP starter dose for nodulation. Sulphur from SSP improves amino acid profile. Legume fixes atmospheric nitrogen."},
+    "Mungbean":    {"primary": "DAP",      "secondary": "SSP",  "reasoning": "DAP + SSP at sowing: phosphorus for root development, sulphur for nodulation and pulse quality."},
+    "Mothbeans":   {"primary": "SSP",      "secondary": "DAP",  "reasoning": "SSP as primary for dryland phosphorus + sulphur; minimal fertilizer input for this drought-hardy pulse."},
+    "Pigeonpeas":  {"primary": "DAP",      "secondary": "SSP",  "reasoning": "DAP + SSP boosts Rhizobium nodulation in long-duration kharif pulse. Sulphur improves grain protein content."},
+    "Kidneybeans": {"primary": "DAP",      "secondary": "SSP",  "reasoning": "High phosphorus (DAP) for pod set; SSP provides sulphur for amino acid synthesis in kidney bean grain."},
+    "Chickpea":    {"primary": "DAP",      "secondary": "SSP",  "reasoning": "DAP + SSP at sowing — phosphorus + sulphur for nodulation and seed protein. Legume fixes own nitrogen."},
+    "Coffee":      {"primary": "17-17-17", "secondary": "MOP",  "reasoning": "Balanced NPK base; MOP (Muriate of Potash) for bean development, cup quality and resistance to stem borer."},
+}
+
+
 class CropPredictionService:
     def __init__(self):
         self.model = None
@@ -85,6 +115,65 @@ class CropPredictionService:
         self.is_model_available = False
         self._climate_cache: Dict[str, Tuple[CropClimateResponse, float]] = {}
         self._load_models()
+
+    def _compute_fertilizer_recommendation(self, crop: str, n: float, p: float, k: float) -> FertilizerRecommendation:
+        """Agronomic fertilizer recommendation via crop-keyed lookup + NPK gap analysis."""
+        base = CROP_FERTILIZER_MAP.get(crop, {
+            "primary": "17-17-17",
+            "secondary": "DAP",
+            "reasoning": "Balanced NPK maintenance fertilizer recommended."
+        })
+        primary = base["primary"]
+        gap_note = ""
+
+        # NPK deficiency override — critical deficiency takes priority over crop default
+        if n < 30 and p < 20 and k < 20:
+            primary = "17-17-17"
+            gap_note = f"Multi-nutrient deficiency (N:{n}, P:{p}, K:{k} kg/ha) detected — balanced 17-17-17 prioritised. "
+        elif n < 30:
+            primary = "Urea"
+            gap_note = f"Low soil nitrogen ({n} kg/ha) — nitrogen supplementation prioritised. "
+        elif p < 15:
+            primary = "DAP"
+            gap_note = f"Low soil phosphorus ({p} kg/ha) — DAP application recommended. "
+        elif k < 15:
+            primary = "MOP"
+            gap_note = f"Low soil potassium ({k} kg/ha) — MOP (Muriate of Potash) application recommended. "
+
+        dose = CROP_METADATA.get(crop, {}).get("fertilizer", "Consult local Krishi Vigyan Kendra (KVK)")
+
+        npk_status = NPKStatus(
+            nitrogen_status="Low" if n < 30 else ("Adequate" if n < 80 else "High"),
+            phosphorus_status="Low" if p < 15 else ("Adequate" if p < 60 else "High"),
+            potassium_status="Low" if k < 15 else ("Adequate" if k < 60 else "High"),
+        )
+
+        # Human-readable product name for display
+        _name_map = {
+            "Urea":     "Urea (46-0-0)",
+            "DAP":      "DAP (Diammonium Phosphate 18-46-0)",
+            "MOP":      "MOP (Muriate of Potash / KCl)",
+            "SSP":      "SSP (Single Super Phosphate)",
+            "17-17-17": "NPK 17-17-17",
+            "28-28":    "NPK 28-28-0",
+            "10-26-26": "NPK 10-26-26",
+            "14-35-14": "NPK 14-35-14",
+            "20-20":    "NPK 20-20-0",
+        }
+        secondary = base["secondary"]
+        fertilizer_name = _name_map.get(primary, f"NPK {primary}")
+        if secondary and secondary != primary:
+            fertilizer_name += f" + {_name_map.get(secondary, secondary)}"
+
+        return FertilizerRecommendation(
+            fertilizer_name=fertilizer_name,
+            primary_fertilizer=primary,
+            secondary_fertilizer=secondary,
+            dose_guidance=dose,
+            reasoning=(gap_note + base["reasoning"]).strip(),
+            npk_gap=npk_status,
+        )
+
 
     def _load_models(self):
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -272,6 +361,8 @@ class CropPredictionService:
                     "Preferred Season": meta_primary.get("ideal_season", "Kharif / Rabi"),
                 }
 
+                fert_rec = self._compute_fertilizer_recommendation(primary_crop, req.nitrogen, req.phosphorus, req.potassium)
+
                 return CropPredictionResponse(
                     recommended_crop=primary_crop,
                     confidence=round(primary_conf, 3),
@@ -282,6 +373,7 @@ class CropPredictionService:
                     growth_hints=growth_hints,
                     advisory_note="Advisory only — consult your local Krishi Vigyan Kendra (KVK) for certified seed varieties, local pest resistance, and soil-specific fertilization.",
                     inputs_echo=inputs_echo,
+                    fertilizer_recommendation=fert_rec,
                 )
             except Exception as e:
                 logger.error(f"ML inference error: {e}. Engaging rule-based agronomy fallback.", exc_info=True)
@@ -319,6 +411,8 @@ class CropPredictionService:
             for a in alt
         ]
 
+        fert_rec = self._compute_fertilizer_recommendation(rec, req.nitrogen, req.phosphorus, req.potassium)
+
         return CropPredictionResponse(
             recommended_crop=rec,
             confidence=0.85,
@@ -332,6 +426,7 @@ class CropPredictionService:
             },
             advisory_note="Advisory only — consult your local Krishi Vigyan Kendra (KVK) for certified seed varieties.",
             inputs_echo=inputs_echo,
+            fertilizer_recommendation=fert_rec,
         )
 
 crop_service = CropPredictionService()

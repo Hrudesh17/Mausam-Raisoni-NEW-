@@ -426,6 +426,21 @@ export interface CropRecommendationItem {
   ideal_season?: string;
 }
 
+export interface NPKStatus {
+  nitrogen_status: string;
+  phosphorus_status: string;
+  potassium_status: string;
+}
+
+export interface FertilizerRecommendation {
+  fertilizer_name: string;         // e.g. "NPK 17-17-17 + DAP (18-46-0)"
+  primary_fertilizer: string;
+  secondary_fertilizer: string;
+  dose_guidance: string;
+  reasoning: string;
+  npk_gap: NPKStatus;
+}
+
 export interface CropPredictionResponse {
   recommended_crop: string;
   confidence: number;
@@ -436,6 +451,7 @@ export interface CropPredictionResponse {
   growth_hints: Record<string, string>;
   advisory_note: string;
   inputs_echo: Record<string, number>;
+  fertilizer_recommendation?: FertilizerRecommendation | null;
 }
 
 export interface CropClimateResponse {

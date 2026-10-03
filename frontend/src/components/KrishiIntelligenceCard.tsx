@@ -15,7 +15,11 @@ import {
   Sparkles,
   Info,
   CheckCircle2,
-  RefreshCw
+  RefreshCw,
+  Leaf,
+  Calendar,
+  FlaskConical,
+  TrendingUp
 } from 'lucide-react';
 import { WeatherResponse, IntelligenceSummary, UserContext, CropPredictionResponse, CropClimateResponse } from '../lib/types';
 import { useLanguage } from '../hooks/useLanguage';
@@ -151,9 +155,24 @@ export const KrishiIntelligenceCard: React.FC<KrishiIntelligenceCardProps> = ({
     }
   };
 
-  // Strict numeric input sanitizer (digits and at most one dot)
-  const sanitizeNumericInput = (val: string, setter: (v: string) => void) => {
-    const clean = val.replace(/[^0-9.]/g, '');
+  // Strict numeric input sanitizer (digits, at most one dot, optional leading minus for temperature)
+  const sanitizeNumericInput = (val: string, setter: (v: string) => void, allowNegative = false) => {
+    let clean: string;
+    if (allowNegative) {
+      // Allow an optional leading minus, digits, and at most one dot
+      clean = val.replace(/[^0-9.\-]/g, '');
+      // Only allow minus at position 0
+      if (clean.indexOf('-') > 0) {
+        clean = clean.replace(/-/g, '');
+      }
+      // Only allow one minus
+      const minusCount = (clean.match(/-/g) || []).length;
+      if (minusCount > 1) {
+        clean = '-' + clean.replace(/-/g, '');
+      }
+    } else {
+      clean = val.replace(/[^0-9.]/g, '');
+    }
     const parts = clean.split('.');
     if (parts.length > 2) {
       setter(`${parts[0]}.${parts.slice(1).join('')}`);
@@ -501,7 +520,7 @@ export const KrishiIntelligenceCard: React.FC<KrishiIntelligenceCardProps> = ({
               onClick={() => handleApplyPreset('black_cotton')}
               className="px-3.5 py-1 rounded-full text-xs font-semibold text-emerald-700 dark:text-emerald-400 border border-emerald-500/50 hover:bg-emerald-500/10 transition active:scale-95 shadow-2xs"
             >
-              Black Cotton
+              Black Soil
             </button>
             <button
               type="button"
@@ -623,7 +642,7 @@ export const KrishiIntelligenceCard: React.FC<KrishiIntelligenceCardProps> = ({
                     inputMode="decimal"
                     placeholder="-10 to 50"
                     value={temperature}
-                    onChange={(e) => sanitizeNumericInput(e.target.value, setTemperature)}
+                    onChange={(e) => sanitizeNumericInput(e.target.value, setTemperature, true)}
                     aria-invalid={Boolean(validationErrors.temperature)}
                     aria-describedby={validationErrors.temperature ? 'crop-temp-err' : undefined}
                     className={`w-full h-11 px-3.5 rounded-xl bg-slate-50 dark:bg-slate-950/60 border text-slate-900 dark:text-white text-sm focus:outline-none transition shadow-inner ${
@@ -777,29 +796,40 @@ export const KrishiIntelligenceCard: React.FC<KrishiIntelligenceCardProps> = ({
 
             </form>
 
-            {/* ── RIGHT COLUMN: RESULT PANEL (EXACT MATCH TO IMAGE 1) ─────────── */}
-            <div className="lg:col-span-5 flex flex-col justify-center">
-              <div className="w-full min-h-[380px] rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/40 p-6 flex flex-col items-center justify-center text-center relative overflow-hidden transition-all duration-300">
+            {/* ── RIGHT COLUMN: RESULT PANEL ──────────────────────────────────── */}
+            <div className="lg:col-span-5 flex flex-col justify-start">
+              <div className="w-full min-h-[380px] rounded-2xl border border-slate-200 dark:border-slate-800 bg-gradient-to-b from-slate-50/80 to-white dark:from-slate-950/60 dark:to-slate-900/80 p-5 sm:p-6 flex flex-col items-center justify-center text-center relative overflow-hidden transition-all duration-300">
                 
-                {/* 1. Empty State (Initial on load before prediction) */}
+                {/* Subtle decorative gradient orb */}
+                <div className="absolute -top-16 -right-16 w-48 h-48 bg-emerald-500/5 rounded-full blur-3xl pointer-events-none" />
+
+                {/* 1. Empty State */}
                 {!predictionResult && !isPredicting && !predictionError && (
-                  <div className="flex flex-col items-center justify-center space-y-3 p-4">
-                    <div className="w-14 h-14 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-500">
-                      <Sprout className="w-7 h-7" />
+                  <div className="flex flex-col items-center justify-center space-y-4 p-4">
+                    <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-emerald-500/15 to-emerald-600/10 border border-emerald-500/20 flex items-center justify-center text-emerald-500 shadow-sm">
+                      <Sprout className="w-8 h-8" />
                     </div>
-                    <h4 className="text-base font-bold text-slate-800 dark:text-slate-200">
+                    <h4 className="text-lg font-bold text-slate-800 dark:text-slate-200 tracking-tight">
                       Ready for Recommendation
                     </h4>
                     <p className="text-xs text-slate-500 dark:text-slate-400 max-w-xs leading-relaxed">
-                      Enter your soil values and tap <strong className="text-emerald-600 dark:text-emerald-400">Predict Ideal Crop</strong>
+                      Enter your soil values and tap <strong className="text-emerald-600 dark:text-emerald-400">Predict Ideal Crop</strong> to receive AI-powered farming intelligence.
                     </p>
+                    <div className="flex items-center gap-2 text-[10px] text-slate-400 dark:text-slate-500">
+                      <span className="flex items-center gap-1"><Leaf className="w-3 h-3" /> 22 Crop Classes</span>
+                      <span>•</span>
+                      <span className="flex items-center gap-1"><TrendingUp className="w-3 h-3" /> Random Forest ML</span>
+                    </div>
                   </div>
                 )}
 
                 {/* 2. Loading State */}
                 {isPredicting && (
-                  <div className="flex flex-col items-center justify-center space-y-3 p-4">
-                    <div className="w-12 h-12 border-3 border-emerald-500/20 border-t-emerald-500 rounded-full animate-spin" />
+                  <div className="flex flex-col items-center justify-center space-y-4 p-4">
+                    <div className="relative">
+                      <div className="w-14 h-14 border-[3px] border-emerald-500/15 border-t-emerald-500 rounded-full animate-spin" />
+                      <Sprout className="w-5 h-5 text-emerald-500 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
+                    </div>
                     <p className="text-xs font-semibold text-slate-600 dark:text-slate-300">
                       Evaluating Random Forest model across 22 crop classes...
                     </p>
@@ -814,14 +844,14 @@ export const KrishiIntelligenceCard: React.FC<KrishiIntelligenceCardProps> = ({
                     <button
                       type="button"
                       onClick={handlePredictCrop}
-                      className="px-3.5 py-1.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-600 dark:text-rose-300 text-xs font-bold"
+                      className="px-3.5 py-1.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-600 dark:text-rose-300 text-xs font-bold hover:bg-rose-500/20 transition"
                     >
                       Retry Prediction
                     </button>
                   </div>
                 )}
 
-                {/* 4. Result State (MATCHING IMAGE 1) */}
+                {/* 4. Result State — Premium Layout */}
                 {predictionResult && !isPredicting && (
                   <div className="w-full flex flex-col items-center space-y-3 animate-in fade-in zoom-in-95 duration-200">
                     
@@ -832,23 +862,28 @@ export const KrishiIntelligenceCard: React.FC<KrishiIntelligenceCardProps> = ({
                       </span>
                     )}
 
-                    {/* RECOMMENDED MATCH Pill (Matching Image 1) */}
-                    <div className="px-3.5 py-1 rounded-full text-[10px] font-extrabold tracking-widest uppercase bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">
-                      RECOMMENDED MATCH
+                    {/* RECOMMENDED MATCH Pill + Confidence Badge */}
+                    <div className="flex items-center gap-2">
+                      <div className="px-3 py-1 rounded-full text-[10px] font-extrabold tracking-widest uppercase bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">
+                        RECOMMENDED MATCH
+                      </div>
+                      <div className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500 text-white shadow-sm">
+                        {Math.round(predictionResult.confidence * 100)}%
+                      </div>
                     </div>
 
-                    {/* Crop Name in Large Emerald Font (Matching Image 1) */}
-                    <h2 className="text-3xl sm:text-4xl font-black text-emerald-600 dark:text-emerald-400 tracking-tight capitalize">
+                    {/* Crop Name */}
+                    <h2 className="text-2xl sm:text-3xl font-black text-emerald-600 dark:text-emerald-400 tracking-tight capitalize leading-tight">
                       {predictionResult.recommended_crop}
                     </h2>
 
-                    {/* Single Sentence (Matching Image 1) */}
-                    <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 max-w-xs leading-relaxed">
+                    {/* Sentence */}
+                    <p className="text-xs text-slate-600 dark:text-slate-300 max-w-xs leading-relaxed">
                       {predictionResult.recommended_crop} is the best crop to be cultivated right there.
                     </p>
 
-                    {/* Crop Photo (Matching Image 1) */}
-                    <div className="w-full max-w-[280px] h-44 rounded-2xl overflow-hidden shadow-md border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-900 mt-2">
+                    {/* Crop Photo */}
+                    <div className="w-full max-w-[260px] h-40 rounded-2xl overflow-hidden shadow-md border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-900 mt-1">
                       <img 
                         src={predictionResult.primary_image_url} 
                         alt={predictionResult.recommended_crop}
@@ -867,9 +902,100 @@ export const KrishiIntelligenceCard: React.FC<KrishiIntelligenceCardProps> = ({
                       />
                     </div>
 
-                    {/* Subtle Safeguard Footer */}
-                    <div className="pt-2 text-[10px] text-slate-400 dark:text-slate-500 max-w-xs leading-tight">
-                      <span>{Math.round(predictionResult.confidence * 100)}% Confidence • Source: {predictionResult.source === 'ml_model' ? 'ML Model' : 'Agronomy Matrix'} • Advisory only - consult your local Krishi Vigyan Kendra</span>
+                    {/* ── Fertilizer Recommendation Panel (Phase 1 Backend Integration) ── */}
+                    {predictionResult.fertilizer_recommendation && (
+                      <div className="w-full p-3 rounded-xl bg-slate-100/90 dark:bg-slate-950/70 border border-amber-500/30 text-left space-y-1.5 mt-2">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1.5 text-amber-600 dark:text-amber-400">
+                            <FlaskConical className="w-3.5 h-3.5" />
+                            <span className="text-[10px] font-bold uppercase tracking-wider">Fertilizer Advisory</span>
+                          </div>
+                          <div className="flex items-center gap-1 text-[10px]">
+                            <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 font-bold border border-emerald-500/30">
+                              {predictionResult.fertilizer_recommendation.primary_fertilizer}
+                            </span>
+                            {predictionResult.fertilizer_recommendation.secondary_fertilizer && (
+                              <span className="px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold text-[9px]">
+                                + {predictionResult.fertilizer_recommendation.secondary_fertilizer}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-snug">
+                          {predictionResult.fertilizer_recommendation.reasoning}
+                        </p>
+
+                        <div className="flex flex-wrap items-center justify-between gap-1.5 pt-1 border-t border-slate-200 dark:border-slate-800 text-[10px] text-slate-500 dark:text-slate-400">
+                          <div>
+                            <span className="font-semibold text-slate-700 dark:text-slate-300">Dose: </span>
+                            <span>{predictionResult.fertilizer_recommendation.dose_guidance}</span>
+                          </div>
+                          <div className="flex items-center gap-1.5 text-[9px]">
+                            <span>N: <strong className="text-slate-800 dark:text-white">{predictionResult.fertilizer_recommendation.npk_gap.nitrogen_status}</strong></span>
+                            <span>P: <strong className="text-slate-800 dark:text-white">{predictionResult.fertilizer_recommendation.npk_gap.phosphorus_status}</strong></span>
+                            <span>K: <strong className="text-slate-800 dark:text-white">{predictionResult.fertilizer_recommendation.npk_gap.potassium_status}</strong></span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* ── Growth Hints Grid ────────────────────────────────────── */}
+                    {predictionResult.growth_hints && Object.keys(predictionResult.growth_hints).length > 0 && (
+                      <div className="w-full grid grid-cols-2 gap-2 mt-2">
+                        {Object.entries(predictionResult.growth_hints).map(([key, value]) => (
+                          <div key={key} className="p-2 rounded-xl bg-slate-100/80 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/50 text-left">
+                            <div className="flex items-center gap-1 mb-0.5">
+                              {key.toLowerCase().includes('sowing') && <Calendar className="w-3 h-3 text-emerald-500 shrink-0" />}
+                              {key.toLowerCase().includes('fertilizer') && <FlaskConical className="w-3 h-3 text-amber-500 shrink-0" />}
+                              {key.toLowerCase().includes('classification') && <Leaf className="w-3 h-3 text-lime-500 shrink-0" />}
+                              {key.toLowerCase().includes('season') && <Sprout className="w-3 h-3 text-teal-500 shrink-0" />}
+                              <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 truncate">{key}</span>
+                            </div>
+                            <span className="text-[11px] font-semibold text-slate-800 dark:text-slate-200 leading-snug block">{value}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* ── Top Alternative Crops ───────────────────────────────── */}
+                    {predictionResult.top_alternatives && predictionResult.top_alternatives.length > 0 && (
+                      <div className="w-full mt-2 space-y-1.5">
+                        <div className="text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400 text-left">
+                          ALSO SUITABLE
+                        </div>
+                        <div className="flex gap-2 overflow-x-auto pb-1">
+                          {predictionResult.top_alternatives.map((alt) => (
+                            <div key={alt.crop} className="flex-shrink-0 w-[120px] rounded-xl border border-slate-200/80 dark:border-slate-700/60 bg-white/80 dark:bg-slate-800/60 overflow-hidden shadow-xs hover:shadow-sm transition-shadow">
+                              <div className="w-full h-16 bg-slate-100 dark:bg-slate-900 overflow-hidden">
+                                <img 
+                                  src={alt.image_url} 
+                                  alt={alt.crop}
+                                  className="w-full h-full object-cover"
+                                  onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                                />
+                              </div>
+                              <div className="p-1.5">
+                                <span className="text-[11px] font-bold text-slate-800 dark:text-slate-200 block truncate">{alt.crop}</span>
+                                <div className="flex items-center gap-1 mt-0.5">
+                                  <div className="flex-1 h-1 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
+                                    <div className="h-full rounded-full bg-emerald-500" style={{ width: `${Math.round(alt.confidence * 100)}%` }} />
+                                  </div>
+                                  <span className="text-[9px] font-bold text-slate-500 dark:text-slate-400 shrink-0">{Math.round(alt.confidence * 100)}%</span>
+                                </div>
+                                {alt.ideal_season && (
+                                  <span className="text-[9px] text-slate-400 dark:text-slate-500 block mt-0.5 truncate">{alt.ideal_season}</span>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Safeguard Footer */}
+                    <div className="pt-2 text-[10px] text-slate-400 dark:text-slate-500 max-w-xs leading-tight border-t border-slate-200/60 dark:border-slate-800/60 mt-1 w-full">
+                      <span>Source: {predictionResult.source === 'ml_model' ? 'ML Model (Random Forest)' : 'Agronomy Matrix'} • Advisory only — consult your local Krishi Vigyan Kendra (KVK)</span>
                     </div>
 
                   </div>

@@ -1,4 +1,4 @@
-from typing import List, Optional, Literal, Dict
+from typing import List, Optional, Literal, Dict, Any
 from pydantic import BaseModel, Field, ConfigDict, field_validator
 import math
 
@@ -44,6 +44,19 @@ class CropRecommendationItem(BaseModel):
     category: Optional[str] = None
     ideal_season: Optional[str] = None
 
+class NPKStatus(BaseModel):
+    nitrogen_status: str = "Unknown"
+    phosphorus_status: str = "Unknown"
+    potassium_status: str = "Unknown"
+
+class FertilizerRecommendation(BaseModel):
+    fertilizer_name: str                           # Human-readable product name, e.g. "NPK 17-17-17" or "Urea + DAP"
+    primary_fertilizer: str
+    secondary_fertilizer: str
+    dose_guidance: str
+    reasoning: str
+    npk_gap: NPKStatus = Field(default_factory=NPKStatus)
+
 class CropPredictionResponse(BaseModel):
     recommended_crop: str
     confidence: float = Field(..., ge=0.0, le=1.0)
@@ -54,6 +67,7 @@ class CropPredictionResponse(BaseModel):
     growth_hints: Dict[str, str] = {}
     advisory_note: str
     inputs_echo: Dict[str, float]
+    fertilizer_recommendation: Optional[FertilizerRecommendation] = None
 
 class CropClimateResponse(BaseModel):
     temperature: Optional[float] = Field(None, description="Mean temperature in °C over 30-day window")

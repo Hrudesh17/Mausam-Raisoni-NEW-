@@ -23,6 +23,7 @@ import { DetailedUVGraph } from './DetailedUVGraph';
 import { DetailedColorCodedGraphs } from './DetailedColorCodedGraphs';
 import { VisibilityCard } from './VisibilityCard';
 import { EventPlannerCard } from './EventPlannerCard';
+import { KrishiPage } from './KrishiPage';
 import { useLanguage } from '../hooks/useLanguage';
 import { getLocalizedWeatherCondition, getLocalizedWeekday } from '../lib/weatherConditions';
 
@@ -374,6 +375,11 @@ export const StandardMausam: React.FC<StandardMausamProps> = ({
           </div>
         </div>
 
+      </div>
+
+      {/* 7. Dedicated Full-Width Crop Intelligence Section (Anchor #crop) */}
+      <div id="crop" className="w-full pt-2">
+        <KrishiPage weather={weather} />
       </div>
 
     </div>

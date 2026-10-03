@@ -15,6 +15,7 @@ import {
 import { Header } from '../components/Header';
 import { StandardMausam } from '../components/StandardMausam';
 import { VayuSyncPersonalized } from '../components/VayuSyncPersonalized';
+import { KrishiPage } from '../components/KrishiPage';
 import { PersonalizationModal } from '../components/PersonalizationModal';
 import { AIAssistantModal } from '../components/AIAssistantModal';
 import { JudgeDemoDrawer } from '../components/JudgeDemoDrawer';
@@ -319,7 +320,14 @@ function MainApp() {
 
         {weather && (
           <>
-            {activeMode === 'standard' ? (
+            {activeSection === 'crop' ? (
+              /* Full-Width Crop Intelligence Section (Exact Match to Image 1) */
+              <KrishiPage
+                weather={weather}
+                intelligence={intelligence}
+                context={context}
+              />
+            ) : activeMode === 'standard' ? (
               /* State 1: Standard Mausam Official Weather Experience */
               <StandardMausam
                 weather={weather}
